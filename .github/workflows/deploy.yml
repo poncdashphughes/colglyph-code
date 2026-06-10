@@ -9,6 +9,11 @@ permissions:
   pages: write
   id-token: write
 
+env:
+  # GitHub forces JavaScript actions onto Node 24 from 16 June 2026 —
+  # opt in now so the switch can't break a future deploy silently
+  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
+
 concurrency:
   group: pages
   cancel-in-progress: false
@@ -20,7 +25,7 @@ jobs:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
         with:
-          node-version: 20
+          node-version: 24
           cache: npm
       - run: npm ci
       - run: npm run build
