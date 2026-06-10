@@ -1,0 +1,64 @@
+LICENSING
+
+This project uses a dual licence structure.
+
+
+1. Specification
+
+The ColGlyphCode specification, including the encoding format, page and
+header layout, error correction scheme, colour palette definition, and grid
+geometry, is licensed under:
+
+    Creative Commons Attribution-ShareAlike 4.0 International (CC BY-SA 4.0)
+    https://creativecommons.org/licenses/by-sa/4.0/
+
+You are free to share and adapt the specification for any purpose, including
+commercial use, provided you give appropriate credit and distribute any
+derivative specifications under the same licence.
+
+
+2. Software
+
+All source code in this repository (encoder, decoder, and supporting tools)
+is licensed under:
+
+    GNU Affero General Public License v3.0 (AGPL-3.0)
+    https://www.gnu.org/licenses/agpl-3.0.en.html
+
+You are free to use, modify, and distribute the software. If you modify the
+software and make it available to users over a network (for example, hosting
+a web based encoder or decoder), you must make the complete source code of
+your modified version available under AGPL-3.0.
+
+This licence was chosen specifically to ensure that ColGlyphCode encoding
+and decoding tools remain free for all users. Charging end users to generate
+or decode ColGlyphCode glyphs using software derived from this project is
+not compatible with the intent of this licence.
+
+
+3. Physical products
+
+Manufacturing and selling physical products that carry ColGlyphCode glyphs
+(printed pages, cards, labels, stickers, badges, or any other printable
+form) is explicitly permitted and encouraged. No additional licence or
+agreement is required for this use, provided the glyph is generated using
+tools that comply with the AGPL-3.0 licence.
+
+
+4. Attribution
+
+All uses of the specification or software must credit:
+
+    ColGlyphCode, created by Peter Hughes
+    https://poncdashphughes.github.io/colglyph-code/
+
+
+5. No warranty
+
+This work is provided as is, without warranty of any kind. It is a working
+proof of concept. See the README for full details on the current status and
+limitations.
+
+
+Copyright (c) 2025-2026 Peter Hughes. All rights reserved under the licences
+stated above.

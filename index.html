@@ -1,0 +1,210 @@
+<!--
+  ColGlyphCode
+  Copyright (c) 2025-2026 Peter Hughes
+  Specification: CC BY-SA 4.0 | Software: AGPL-3.0
+-->
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+  <meta name="theme-color" content="#0a0a0b">
+  <title>ColGlyphCode</title>
+</head>
+<body>
+  <!-- ── LANDING HERO ── -->
+  <section class="hero" id="heroSection">
+    <div class="hero-inner">
+      <div class="hero-badge">
+        <div class="logo-glyph">
+          <span style="background:#D92626"></span>
+          <span style="background:#E87D1A"></span>
+          <span style="background:#2E6FBF"></span>
+          <span style="background:#1A8C5A"></span>
+        </div>
+        ColGlyphCode
+      </div>
+
+      <h1 class="hero-heading">Encode <em>any file</em> into colour.<br>Decode it back.</h1>
+
+      <p class="hero-body">
+        ColGlyphCode stores data as a grid of 16 colours &mdash; each cell encodes a 4-bit nibble, protected by Reed&ndash;Solomon error correction. Upload a file, choose a paper size or screen size, and the system calculates how much data fits. The result is a camera-readable colour glyph that reconstructs your original file, even when parts of it are smudged, glared, or damaged.
+      </p>
+      <p class="hero-body">
+        From <strong>A4 pages</strong> holding kilobytes to <strong>business card labels</strong> holding a few bytes, the same encoding works everywhere. Print it, display it, scan it back.
+      </p>
+
+      <div class="hero-cta">
+        <button class="btn btn-primary btn-lg" id="heroEncode">Encode a file</button>
+        <button class="btn btn-secondary btn-lg" id="heroDecode">Decode a glyph</button>
+      </div>
+
+      <div class="hero-specs">
+        <span>16-colour palette</span>
+        <span class="spec-dot"></span>
+        <span>4 bits per cell</span>
+        <span class="spec-dot"></span>
+        <span>Reed&ndash;Solomon ECC</span>
+        <span class="spec-dot"></span>
+        <span>Paper + Screen sizes</span>
+        <span class="spec-dot"></span>
+        <span>Camera decode</span>
+      </div>
+    </div>
+  </section>
+
+  <!-- ── APP ── -->
+  <div class="app-wrapper" id="appWrapper">
+    <header class="app-header">
+      <div class="logo">
+        <div class="logo-glyph">
+          <span style="background:#D92626"></span>
+          <span style="background:#E87D1A"></span>
+          <span style="background:#2E6FBF"></span>
+          <span style="background:#1A8C5A"></span>
+        </div>
+        ColGlyphCode
+        <span class="version-badge">v1.2</span>
+      </div>
+      <div class="tabs">
+        <button class="tab active" data-tab="encoder">Encode</button>
+        <button class="tab" data-tab="decoder">Decode</button>
+      </div>
+    </header>
+
+    <main class="app-main">
+    <!-- ── ENCODER VIEW ── -->
+    <div class="view encoder-view active" id="encoderView">
+      <!-- Glyph preview -->
+      <div class="glyph-preview-section">
+        <div class="page-nav" id="pageNav" style="display:none;">
+          <button class="btn btn-secondary btn-sm" id="prevPage">&larr;</button>
+          <span class="page-label" id="pageLabel">Page 1 / 1</span>
+          <button class="btn btn-secondary btn-sm" id="nextPage">&rarr;</button>
+        </div>
+        <div class="glyph-output">
+          <canvas id="glyphCanvas"></canvas>
+        </div>
+        <div class="output-actions">
+          <button class="btn btn-primary btn-sm" id="downloadPng">Download PNG</button>
+          <button class="btn btn-secondary btn-sm" id="downloadSvg">Download SVG</button>
+          <button class="btn btn-secondary btn-sm" id="downloadAllPng" style="display:none;">Download All PNGs</button>
+          <button class="btn btn-secondary btn-sm" id="copyHex">Copy Hex</button>
+        </div>
+        <div class="preview-info" id="previewInfo">
+          Select a media size and upload a file to begin
+        </div>
+      </div>
+
+      <div class="encoder-form" id="encoderForm">
+        <!-- Media Size Selection -->
+        <div class="section-title">Target Size</div>
+        <div class="media-category-tabs" id="mediaCategoryTabs"></div>
+        <div class="media-size-grid" id="mediaSizeGrid"></div>
+
+        <!-- Print Density -->
+        <div class="section-title">Cell Density</div>
+        <div class="media-category-tabs" id="densityTabs"></div>
+        <div class="capacity-text" id="densityHint"></div>
+
+        <!-- File Upload -->
+        <div class="section-title">File</div>
+        <div class="file-drop-zone" id="fileDropZone">
+          <div class="file-drop-icon">&#128193;</div>
+          <div class="file-drop-text">Drop any file here or tap to upload</div>
+          <div class="file-drop-hint">Any file type supported</div>
+          <input type="file" id="fileInput" style="display: none">
+        </div>
+        <div class="file-info" id="fileInfo">
+          <span class="file-info-icon">&#128196;</span>
+          <div>
+            <div class="file-info-name" id="fileName">—</div>
+            <div class="file-info-size" id="fileSize">—</div>
+            <div class="file-info-pages" id="filePages">—</div>
+          </div>
+        </div>
+
+        <!-- Capacity -->
+        <div class="capacity-bar"><div class="capacity-fill" id="capacityFill"></div></div>
+        <div class="capacity-text" id="capacityText">No file loaded</div>
+
+        <!-- Optional Label -->
+        <div class="section-title">Options</div>
+        <div class="form-group">
+          <label for="glyphLabel">Label (optional)</label>
+          <input type="text" id="glyphLabel" maxlength="64" placeholder="Text shown in the glyph header">
+        </div>
+      </div>
+    </div>
+
+    <!-- ── DECODER VIEW ── -->
+    <div class="view decoder-view" id="decoderView">
+      <div class="decoder-content">
+        <!-- Upload zone -->
+        <div class="drop-zone" id="decodeDropZone">
+          <div class="drop-zone-icon">&#128247;</div>
+          <div class="drop-zone-text">Drop glyph image here or tap to upload</div>
+          <div class="drop-zone-hint">PNG, JPG supported — add multiple pages in order</div>
+          <input type="file" id="decodeFileInput" accept="image/*" multiple style="display: none">
+        </div>
+
+        <!-- Camera section -->
+        <div class="camera-section" id="cameraSection" style="display: none;">
+          <video id="cameraVideo" playsinline muted></video>
+        </div>
+        <div class="camera-controls">
+          <button class="btn btn-secondary" id="toggleCamera">Open Camera</button>
+          <button class="btn btn-primary" id="captureBtn" style="display: none;">Capture</button>
+          <button class="btn btn-secondary btn-sm" id="switchCamera" style="display: none;">Flip</button>
+        </div>
+
+        <!-- Uploaded preview -->
+        <div class="uploaded-preview" id="uploadedPreview">
+          <img id="decodePreviewImg" alt="Uploaded glyph">
+        </div>
+
+        <!-- Grid size hint -->
+        <div class="form-row" style="margin-top: 12px;">
+          <div class="form-group">
+            <label for="hintCols">Grid Cols (optional)</label>
+            <input type="number" id="hintCols" placeholder="auto-detect">
+          </div>
+          <div class="form-group">
+            <label for="hintRows">Grid Rows (optional)</label>
+            <input type="number" id="hintRows" placeholder="auto-detect">
+          </div>
+        </div>
+
+        <!-- Decode button -->
+        <button class="btn btn-primary" id="decodeBtn" style="width: 100%; margin-top: 12px; display: none;">
+          Decode Glyph
+        </button>
+
+        <!-- Decoded output -->
+        <div class="decoded-output" id="decodedOutput">
+          <div class="decoded-header">
+            <div class="decoded-avatar">&#128196;</div>
+            <div>
+              <div class="decoded-name" id="decodedName">&mdash;</div>
+              <div class="decoded-meta" id="decodedMeta">&mdash;</div>
+            </div>
+          </div>
+          <div id="decodedDetails"></div>
+          <button class="btn btn-primary" id="downloadDecoded" style="width: 100%; margin-top: 12px; display: none;">
+            Download Decoded File
+          </button>
+        </div>
+
+        <!-- Debug -->
+        <div class="debug-panel" id="decodeDebug">
+          <pre id="debugPre"></pre>
+        </div>
+      </div>
+    </div>
+  </main>
+
+  </div><!-- /app-wrapper -->
+
+  <script type="module" src="/src/main.ts"></script>
+</body>
+</html>
