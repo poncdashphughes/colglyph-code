@@ -185,7 +185,10 @@ export function pagePayloadCapacity(layout: GlyphLayout): number {
   const rsRegion = layout.capacityBytes - PREAMBLE_BYTES;
   if (rsRegion < HEADER_BYTES + 2) return 0;
   const plan = computeEccPlan(rsRegion);
-  return Math.max(0, plan.dataBytes - HEADER_BYTES);
+  // Header bytes 8-9 carry payload length as u16 — a grid can hold more
+  // than 65,535 payload bytes (e.g. large screens at Ultra density), but
+  // a page must never claim to.
+  return Math.min(Math.max(0, plan.dataBytes - HEADER_BYTES), 0xFFFF);
 }
 
 /**
@@ -231,9 +234,18 @@ export function encodeFile(
     const payload = Array.from(fileBytes.slice(start, end));
     const payloadLen = payload.length;
 
-    // Pad payload to fill capacity
-    while (payload.length < payloadCapacity) {
-      payload.push(0x00);
+    // Pad payload to fill the ECC plan's data region — this can exceed
+    // payloadCapacity when the u16 header field caps the usable payload
+    // below what the grid physically holds (the surplus is padding).
+    // Padding is pseudo-random rather than zero: decoders ignore it (the
+    // header's payload length bounds what is kept), and a run of zeros
+    // renders as a field of black cells that camera lattice refinement
+    // has nothing to lock onto — a file's short final page was
+    // measurably harder to decode live than its full pages.
+    let pad = (0x9E3779B1 ^ Math.imul(page + 1, 0x85EBCA6B)) >>> 0;
+    while (payload.length < plan.dataBytes - HEADER_BYTES) {
+      pad = (Math.imul(pad, 1664525) + 1013904223) >>> 0;
+      payload.push(pad >>> 24);
     }
 
     const checksum = crc16(payload.slice(0, payloadLen));

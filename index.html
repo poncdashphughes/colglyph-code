@@ -31,7 +31,7 @@
         ColGlyphCode stores data as a grid of 16 colours &mdash; each cell encodes a 4-bit nibble, protected by Reed&ndash;Solomon error correction. Upload a file, choose a paper size or screen size, and the system calculates how much data fits. The result is a camera-readable colour glyph that reconstructs your original file, even when parts of it are smudged, glared, or damaged.
       </p>
       <p class="hero-body">
-        From <strong>A4 pages</strong> holding kilobytes to <strong>business card labels</strong> holding a few bytes, the same encoding works everywhere. Print it, display it, scan it back.
+        From <strong>A4 pages</strong> holding kilobytes to <strong>business card labels</strong> holding a few bytes, the same encoding works everywhere. Print it and scan it back &mdash; or <strong>present it on a screen</strong> and let a phone collect the file live, with no network between them.
       </p>
 
       <div class="hero-cta">
@@ -89,8 +89,14 @@
           <button class="btn btn-primary btn-sm" id="downloadPng">Download PNG</button>
           <button class="btn btn-secondary btn-sm" id="downloadSvg">Download SVG</button>
           <button class="btn btn-secondary btn-sm" id="downloadAllPng" style="display:none;">Download All PNGs</button>
+          <button class="btn btn-secondary btn-sm" id="presentBtn" style="display:none;">Present</button>
           <button class="btn btn-secondary btn-sm" id="copyHex">Copy Hex</button>
         </div>
+        <p class="preview-hint">
+          <strong>Present</strong> shows the glyph full-screen and cycles its pages so another device can
+          collect the file live: on a phone, open this site, choose Decode &rarr; Open Camera &rarr; Scan Deck,
+          and point it at the screen. Esc exits.
+        </p>
         <div class="preview-info" id="previewInfo">
           Select a media size and upload a file to begin
         </div>
@@ -144,19 +150,25 @@
         <div class="drop-zone" id="decodeDropZone">
           <div class="drop-zone-icon">&#128247;</div>
           <div class="drop-zone-text">Drop glyph image here or tap to upload</div>
-          <div class="drop-zone-hint">PNG, JPG supported — add multiple pages in order</div>
+          <div class="drop-zone-hint">PNG, JPG supported — select all pages at once, in any order</div>
           <input type="file" id="decodeFileInput" accept="image/*" multiple style="display: none">
         </div>
 
         <!-- Camera section -->
         <div class="camera-section" id="cameraSection" style="display: none;">
           <video id="cameraVideo" playsinline muted></video>
+          <div class="scan-status" id="scanStatus" style="display: none;"></div>
         </div>
         <div class="camera-controls">
           <button class="btn btn-secondary" id="toggleCamera">Open Camera</button>
+          <button class="btn btn-primary" id="scanBtn" style="display: none;">Scan Deck</button>
           <button class="btn btn-primary" id="captureBtn" style="display: none;">Capture</button>
           <button class="btn btn-secondary btn-sm" id="switchCamera" style="display: none;">Flip</button>
         </div>
+        <p class="preview-hint">
+          Receiving from a screen? <strong>Open Camera</strong>, then <strong>Scan Deck</strong> and point at the
+          presentation — pages collect automatically until the file is complete.
+        </p>
 
         <!-- Uploaded preview -->
         <div class="uploaded-preview" id="uploadedPreview">

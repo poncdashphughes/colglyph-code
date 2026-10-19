@@ -29,9 +29,9 @@ export function preprocessFrame(
   if (!quad) return null;
 
   const corrected = perspectiveWarp(sourceCanvas, quad);
-  normaliseWhiteBalance(corrected.ctx, corrected.canvas.width, corrected.canvas.height);
+  normaliseWhiteBalance(corrected.ctx, corrected.canvas.width, corrected.canvas.height, corrected.inset);
 
-  return corrected;
+  return { canvas: corrected.canvas, ctx: corrected.ctx };
 }
 
 /**
@@ -223,7 +223,7 @@ function fitEdgeLine(
 function perspectiveWarp(
   source: HTMLCanvasElement,
   quad: Quad,
-): { canvas: HTMLCanvasElement; ctx: CanvasRenderingContext2D } {
+): { canvas: HTMLCanvasElement; ctx: CanvasRenderingContext2D; inset: number } {
   const topWidth = Math.sqrt((quad.tr.x - quad.tl.x) ** 2 + (quad.tr.y - quad.tl.y) ** 2);
   const bottomWidth = Math.sqrt((quad.br.x - quad.bl.x) ** 2 + (quad.br.y - quad.bl.y) ** 2);
   const leftHeight = Math.sqrt((quad.bl.x - quad.tl.x) ** 2 + (quad.bl.y - quad.tl.y) ** 2);
@@ -325,7 +325,9 @@ function perspectiveWarp(
   }
 
   outCtx.putImageData(outData, 0, 0);
-  return { canvas: outCanvas, ctx: outCtx };
+  // inset = everything the warp painted or scrubbed to pure white; the
+  // glyph's real quiet zone starts beyond it.
+  return { canvas: outCanvas, ctx: outCtx, inset: border + cleanMargin };
 }
 
 /**
@@ -337,25 +339,27 @@ function normaliseWhiteBalance(
   ctx: CanvasRenderingContext2D,
   width: number,
   height: number,
+  inset: number,
 ): void {
   const imageData = ctx.getImageData(0, 0, width, height);
   const data = imageData.data;
 
-  // Sample the quiet zone from the outer 10% band. The band must reach
-  // past the synthetic pure-white border the warp adds (~3% of the image,
-  // and excluded below) into the glyph's real printed quiet zone —
-  // otherwise there is nothing to measure the colour cast from.
-  const margin = Math.max(8, Math.round(Math.min(width, height) * 0.10));
+  // Sample the ring between the warp's synthetic white border (inset)
+  // and the outer 10% band: that is the glyph's real quiet zone. The
+  // ring is chosen geometrically and pure-white pixels are NOT skipped —
+  // a well-exposed or clipped quiet zone legitimately reads 255, and
+  // skipping it used to leave only anti-aliased cell edges to "correct"
+  // against, applying a bogus ~1.3× gain that failed every decode of a
+  // bright screen.
+  const margin = Math.max(inset + 8, Math.round(Math.min(width, height) * 0.10));
   let sumR = 0, sumG = 0, sumB = 0, count = 0;
 
   for (let y = 0; y < height; y++) {
     for (let x = 0; x < width; x++) {
-      if (x >= margin && x < width - margin && y >= margin && y < height - margin) continue;
+      const edge = Math.min(x, width - 1 - x, y, height - 1 - y);
+      if (edge < inset || edge >= margin) continue;
       const i = (y * width + x) * 4;
-      // Skip pure white (255,255,255) — synthetic border pixels that would
-      // dilute the colour cast signal
       const r = data[i], g = data[i + 1], bl = data[i + 2];
-      if (r === 255 && g === 255 && bl === 255) continue;
       // Only sample bright, near-grey pixels: the quiet zone under a colour
       // cast. Strongly saturated pixels are glyph cells, not quiet zone.
       const b = 0.299 * r + 0.587 * g + 0.114 * bl;

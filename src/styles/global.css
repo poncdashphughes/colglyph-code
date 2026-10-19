@@ -348,6 +348,26 @@ input:focus, select:focus, textarea:focus { outline: none; border-color: var(--g
 }
 .glyph-output canvas { display: block; max-width: 100%; height: auto; }
 
+/* Present mode — glyph fills the panel, letterboxed on white so the
+   quiet zone survives at every aspect ratio. The .present-overlay class
+   is the fallback for browsers without element fullscreen (iPhones). */
+.glyph-output canvas:fullscreen,
+.glyph-output canvas:-webkit-full-screen,
+.glyph-output canvas.present-overlay {
+  width: 100vw;
+  height: 100vh;
+  height: 100dvh;
+  max-width: none;
+  object-fit: contain;
+  background: #fff;
+  cursor: none;
+}
+.glyph-output canvas.present-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 999;
+}
+
 .output-actions {
   display: flex;
   gap: 10px;
@@ -458,6 +478,26 @@ input:focus, select:focus, textarea:focus { outline: none; border-color: var(--g
   min-height: 300px;
 }
 .camera-section video { width: 100%; height: 100%; object-fit: cover; }
+
+.preview-hint {
+  margin: 12px 0 0;
+  font-size: 0.8rem;
+  line-height: 1.5;
+  color: var(--text-secondary);
+}
+.preview-hint strong { color: var(--text-primary); font-weight: 500; }
+
+.scan-status {
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  padding: 8px 12px;
+  font-size: 0.85rem;
+  color: var(--gold);
+  background: rgba(10, 10, 11, 0.85);
+  border-top: 1px solid var(--gold-border);
+}
 .camera-controls { display: flex; gap: 12px; padding: 16px; justify-content: center; }
 
 /* ── Debug Panel ── */

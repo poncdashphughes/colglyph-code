@@ -40,6 +40,8 @@ export const SCREEN_SIZES: MediaSize[] = [
   { id: 'tablet-lg',     name: 'Tablet Large (1024×1366)', category: 'screen', width: 1024, height: 1366, minCellSize: 5,  quietZone: 20,  pxPerUnit: 1 },
   { id: 'laptop',        name: 'Laptop (1440×900)',        category: 'screen', width: 1440, height: 900,  minCellSize: 5,  quietZone: 20,  pxPerUnit: 1 },
   { id: 'desktop',       name: 'Desktop (1920×1080)',      category: 'screen', width: 1920, height: 1080, minCellSize: 6,  quietZone: 24,  pxPerUnit: 1 },
+  { id: 'desktop-qhd',   name: 'Desktop QHD (2560×1440)',  category: 'screen', width: 2560, height: 1440, minCellSize: 6,  quietZone: 24,  pxPerUnit: 1 },
+  { id: 'desktop-4k',    name: 'Desktop 4K (3840×2160)',   category: 'screen', width: 3840, height: 2160, minCellSize: 8,  quietZone: 32,  pxPerUnit: 1 },
   // Custom aspect ratios
   { id: 'square-sm',     name: 'Square 256px',             category: 'screen', width: 256,  height: 256,  minCellSize: 4,  quietZone: 6,   pxPerUnit: 1 },
   { id: 'square-md',     name: 'Square 512px',             category: 'screen', width: 512,  height: 512,  minCellSize: 5,  quietZone: 10,  pxPerUnit: 1 },

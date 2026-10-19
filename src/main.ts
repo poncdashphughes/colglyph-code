@@ -50,6 +50,30 @@ let encodeError = '';
 let decoderImageCanvas: HTMLCanvasElement | null = null;
 let decoderImageCtx: CanvasRenderingContext2D | null = null;
 let decodedPages: DecodedPageInfo[] = [];
+
+function sameFile(a: DecodedPageInfo, b: DecodedPageInfo): boolean {
+  return a.filename === b.filename
+    && a.fileSize === b.fileSize
+    && a.totalPages === b.totalPages
+    && a.compressed === b.compressed;
+}
+
+/**
+ * Merge a decoded page into the collection. Only pages whose payload
+ * CRC verified are kept — a header-valid page with a failed CRC would
+ * otherwise satisfy the page count with corrupt data — and a page from
+ * a different file starts a fresh collection rather than merging.
+ */
+function accumulatePage(pageInfo: DecodedPageInfo): boolean {
+  if (!pageInfo.valid || !pageInfo.checksumValid) return false;
+  if (decodedPages.length > 0 && !sameFile(decodedPages[0], pageInfo)) {
+    decodedPages = [];
+  }
+  const existing = decodedPages.findIndex(p => p.page === pageInfo.page);
+  if (existing >= 0) decodedPages[existing] = pageInfo;
+  else decodedPages.push(pageInfo);
+  return true;
+}
 let camera: CameraManager | null = null;
 
 const $ = (id: string) => document.getElementById(id)!;
@@ -100,11 +124,7 @@ function initTabs() {
       $(`${target}View`).classList.add('active');
 
       if (target !== 'decoder' && camera?.isActive) {
-        camera.stop();
-        $('cameraSection').style.display = 'none';
-        $('toggleCamera').textContent = 'Open Camera';
-        $('captureBtn').style.display = 'none';
-        $('switchCamera').style.display = 'none';
+        closeCamera();
       }
     });
   });
@@ -260,6 +280,7 @@ function reEncode() {
     encodedPages = [];
     currentPage = 0;
     renderCurrentPage();
+    updateCapacity();
     return;
   }
 
@@ -307,6 +328,98 @@ function initPageNav() {
       updatePageNav();
     }
   });
+
+  initPresent();
+}
+
+// ── Present Mode ──
+// Shows the glyph edge-to-edge and auto-cycles pages so a camera can
+// collect the whole deck hands-free. Uses the Fullscreen API where the
+// browser has one; otherwise (or if the request is refused) falls back
+// to a fixed full-viewport overlay — iPhones have no element fullscreen
+// at all. Esc, or tapping the glyph in overlay mode, exits.
+const PRESENT_DWELL_MS = 2000;
+let presentTimer: number | null = null;
+let presentOverlayActive = false;
+
+function startPresentCycling() {
+  if (encodedPages.length > 1 && presentTimer === null) {
+    presentTimer = window.setInterval(() => {
+      currentPage = (currentPage + 1) % encodedPages.length;
+      renderCurrentPage();
+      updatePageNav();
+    }, PRESENT_DWELL_MS);
+  }
+}
+
+function stopPresentCycling() {
+  if (presentTimer !== null) {
+    window.clearInterval(presentTimer);
+    presentTimer = null;
+  }
+}
+
+function initPresent() {
+  const canvas = $('glyphCanvas') as HTMLCanvasElement & { webkitRequestFullscreen?: () => void };
+
+  const enterOverlay = () => {
+    presentOverlayActive = true;
+    canvas.classList.add('present-overlay');
+    startPresentCycling();
+  };
+  const exitOverlay = () => {
+    presentOverlayActive = false;
+    canvas.classList.remove('present-overlay');
+    stopPresentCycling();
+  };
+
+  const fullscreenElement = () =>
+    document.fullscreenElement
+      ?? (document as Document & { webkitFullscreenElement?: Element }).webkitFullscreenElement;
+
+  let watchdog: number | null = null;
+  $('presentBtn').addEventListener('click', () => {
+    if (encodedPages.length === 0) return;
+    if (canvas.requestFullscreen) {
+      canvas.requestFullscreen().catch(() => enterOverlay());
+    } else if (canvas.webkitRequestFullscreen) {
+      canvas.webkitRequestFullscreen();
+    } else {
+      enterOverlay();
+      return;
+    }
+    // Some embedded browsers accept the fullscreen request but never
+    // enter it (and never reject) — verify engagement, else overlay.
+    if (watchdog !== null) window.clearTimeout(watchdog);
+    watchdog = window.setTimeout(() => {
+      watchdog = null;
+      if (fullscreenElement() !== canvas && !presentOverlayActive) enterOverlay();
+    }, 400);
+  });
+
+  canvas.addEventListener('click', () => {
+    if (presentOverlayActive) exitOverlay();
+  });
+  document.addEventListener('keydown', e => {
+    if (e.key === 'Escape' && presentOverlayActive) exitOverlay();
+  });
+
+  const onFullscreenChange = () => {
+    if (watchdog !== null) {
+      window.clearTimeout(watchdog);
+      watchdog = null;
+    }
+    if (fullscreenElement() === canvas) {
+      // Real fullscreen engaged — the overlay must not also be active.
+      presentOverlayActive = false;
+      canvas.classList.remove('present-overlay');
+      startPresentCycling();
+    } else {
+      exitOverlay();
+    }
+  };
+  document.addEventListener('fullscreenchange', onFullscreenChange);
+  document.addEventListener('webkitfullscreenchange', onFullscreenChange);
 }
 
 function updatePageNav() {
@@ -321,6 +434,7 @@ function updatePageNav() {
     nav.style.display = 'none';
     allBtn.style.display = 'none';
   }
+  $('presentBtn').style.display = encodedPages.length > 0 ? '' : 'none';
 }
 
 // ── Info Displays ──
@@ -441,40 +555,13 @@ function initDecoder() {
 
   $('decodeBtn').addEventListener('click', () => {
     if (decoderImageCanvas && decoderImageCtx) {
-      const hintCols = parseInt(($('hintCols') as HTMLInputElement).value) || undefined;
-      const hintRows = parseInt(($('hintRows') as HTMLInputElement).value) || undefined;
-
-      // Try direct decode first
-      let result = decodeFromImage(decoderImageCanvas, decoderImageCtx, hintCols, hintRows);
-
-      // If direct decode fails, try with preprocessing (image might be a photo)
-      if (!result.pageInfo?.valid) {
-        const corrected = preprocessFrame(decoderImageCanvas);
-        if (corrected) {
-          const ppResult = decodeFromImage(corrected.canvas, corrected.ctx, hintCols, hintRows);
-          if (ppResult.pageInfo?.valid || ppResult.confidence > result.confidence) {
-            result = ppResult;
-            // Update preview to show corrected image
-            ($('decodePreviewImg') as HTMLImageElement).src = corrected.canvas.toDataURL();
-          }
-        }
-      }
-
-      if (result.pageInfo?.valid) {
-        const pageInfo = result.pageInfo;
-        const existing = decodedPages.findIndex(p => p.page === pageInfo.page);
-        if (existing >= 0) {
-          decodedPages[existing] = pageInfo;
-        } else {
-          decodedPages.push(pageInfo);
-        }
-      }
-      displayDecodedData(result);
+      displayDecodedData(decodeCanvas(decoderImageCanvas, decoderImageCtx, true));
     }
   });
 
   $('toggleCamera').addEventListener('click', toggleCamera);
   $('captureBtn').addEventListener('click', captureFromCamera);
+  $('scanBtn').addEventListener('click', toggleScanning);
   $('switchCamera').addEventListener('click', () => camera?.switchCamera());
 
   $('downloadDecoded').addEventListener('click', async () => {
@@ -499,52 +586,133 @@ function initDecoder() {
   });
 }
 
-function loadDecodeImages(files: FileList) {
-  decodedPages = [];
+/** Decode one canvas, accumulating any valid page into decodedPages */
+function decodeCanvas(
+  canvas: HTMLCanvasElement,
+  ctx: CanvasRenderingContext2D,
+  showCorrectedPreview: boolean,
+  hints?: { cols: number; rows: number },
+): DecodedResult {
+  const hintCols = hints?.cols ?? (parseInt(($('hintCols') as HTMLInputElement).value) || undefined);
+  const hintRows = hints?.rows ?? (parseInt(($('hintRows') as HTMLInputElement).value) || undefined);
 
-  // Load first image for preview
-  const file = files[0];
-  const reader = new FileReader();
-  reader.onload = () => {
-    const img = new Image();
-    img.onload = () => {
-      ($('decodePreviewImg') as HTMLImageElement).src = img.src;
-      $('uploadedPreview').classList.add('visible');
-      $('decodeBtn').style.display = 'block';
+  // Try direct decode first
+  let result = decodeFromImage(canvas, ctx, hintCols, hintRows);
 
-      decoderImageCanvas = document.createElement('canvas');
-      decoderImageCanvas.width = img.width;
-      decoderImageCanvas.height = img.height;
-      decoderImageCtx = decoderImageCanvas.getContext('2d')!;
-      decoderImageCtx.drawImage(img, 0, 0);
+  // If direct decode fails, try with preprocessing (image might be a photo)
+  if (!result.pageInfo?.valid) {
+    const corrected = preprocessFrame(canvas);
+    if (corrected) {
+      const ppResult = decodeFromImage(corrected.canvas, corrected.ctx, hintCols, hintRows);
+      if (ppResult.pageInfo?.valid || ppResult.confidence > result.confidence) {
+        result = ppResult;
+        if (showCorrectedPreview) {
+          ($('decodePreviewImg') as HTMLImageElement).src = corrected.canvas.toDataURL();
+        }
+      }
+    }
+  }
+
+  if (result.pageInfo) accumulatePage(result.pageInfo);
+  return result;
+}
+
+function loadImageFile(file: File): Promise<{ canvas: HTMLCanvasElement; ctx: CanvasRenderingContext2D; src: string }> {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onerror = () => reject(new Error(`Could not read ${file.name}`));
+    reader.onload = () => {
+      const img = new Image();
+      img.onerror = () => reject(new Error(`Not a decodable image: ${file.name}`));
+      img.onload = () => {
+        const canvas = document.createElement('canvas');
+        canvas.width = img.width;
+        canvas.height = img.height;
+        const ctx = canvas.getContext('2d')!;
+        ctx.drawImage(img, 0, 0);
+        resolve({ canvas, ctx, src: img.src });
+      };
+      img.src = reader.result as string;
     };
-    img.src = reader.result as string;
-  };
-  reader.readAsDataURL(file);
+    reader.readAsDataURL(file);
+  });
+}
+
+async function loadDecodeImages(files: FileList) {
+  decodedPages = [];
+  const list = Array.from(files);
+
+  const first = await loadImageFile(list[0]).catch(() => null);
+  if (!first) {
+    alert(`Could not read ${list[0].name} as an image — use a PNG or JPEG photo of the glyph.`);
+    return;
+  }
+
+  ($('decodePreviewImg') as HTMLImageElement).src = first.src;
+  $('uploadedPreview').classList.add('visible');
+  $('decodeBtn').style.display = 'block';
+  decoderImageCanvas = first.canvas;
+  decoderImageCtx = first.ctx;
+
+  // Batch selection: decode every image now, accumulating pages —
+  // a multi-page deck can be photographed and dropped in one go.
+  if (list.length > 1) {
+    let last: DecodedResult | null = null;
+    let validCount = 0;
+    let unreadable = 0;
+    for (const f of list) {
+      const loaded = await loadImageFile(f).catch(() => null);
+      if (!loaded) {
+        unreadable++;
+        continue;
+      }
+      const result = decodeCanvas(loaded.canvas, loaded.ctx, false);
+      if (result.pageInfo?.valid && result.pageInfo.checksumValid) {
+        validCount++;
+        last = result;
+      } else if (!last) {
+        last = result;
+      }
+    }
+    if (last) {
+      await displayDecodedData(last);
+      $('decodedMeta').textContent += ` • ${validCount} of ${list.length} photos decoded`
+        + (unreadable ? ` (${unreadable} not readable as images)` : '');
+    }
+  }
+}
+
+/** Stop the camera and any scan in progress, and fold the camera UI */
+function closeCamera() {
+  stopScanning();
+  if (camera?.isActive) camera.stop();
+  $('cameraSection').style.display = 'none';
+  $('toggleCamera').textContent = 'Open Camera';
+  $('captureBtn').style.display = 'none';
+  $('scanBtn').style.display = 'none';
+  $('switchCamera').style.display = 'none';
+  $('scanStatus').style.display = 'none';
 }
 
 async function toggleCamera() {
-  const section = $('cameraSection');
-  const btn = $('toggleCamera');
-
   if (camera?.isActive) {
-    camera.stop();
-    section.style.display = 'none';
-    btn.textContent = 'Open Camera';
-    $('captureBtn').style.display = 'none';
-    $('switchCamera').style.display = 'none';
-  } else {
-    try {
-      const video = $('cameraVideo') as HTMLVideoElement;
-      camera = new CameraManager(video);
-      await camera.start();
-      section.style.display = 'block';
-      btn.textContent = 'Close Camera';
-      $('captureBtn').style.display = '';
-      $('switchCamera').style.display = '';
-    } catch (err) {
-      alert(`Camera error: ${(err as Error).message}`);
-    }
+    closeCamera();
+    return;
+  }
+  try {
+    const video = $('cameraVideo') as HTMLVideoElement;
+    camera = new CameraManager(video);
+    // iOS ends the track on app switch, screen lock or an incoming call
+    // — fold the UI rather than scanning a frozen frame forever.
+    camera.onEnded = () => closeCamera();
+    await camera.start();
+    $('cameraSection').style.display = 'block';
+    $('toggleCamera').textContent = 'Close Camera';
+    $('captureBtn').style.display = '';
+    $('scanBtn').style.display = '';
+    $('switchCamera').style.display = '';
+  } catch (err) {
+    alert(`Camera error: ${(err as Error).message}`);
   }
 }
 
@@ -569,16 +737,143 @@ function captureFromCamera() {
   $('decodeBtn').style.display = 'block';
 
   const result = decodeFromImage(decoderImageCanvas, decoderImageCtx);
-  if (result.pageInfo?.valid) {
-    const pageInfo = result.pageInfo;
-    const existing = decodedPages.findIndex(p => p.page === pageInfo.page);
-    if (existing >= 0) {
-      decodedPages[existing] = pageInfo;
-    } else {
-      decodedPages.push(pageInfo);
-    }
-  }
+  if (result.pageInfo) accumulatePage(result.pageInfo);
   displayDecodedData(result);
+}
+
+// ── Live Deck Scanning ──
+// Point the camera at a running Present-mode slideshow: frames are
+// decoded continuously, pages accumulate, and scanning stops itself
+// once every page has been seen. Slides loop, so a missed frame just
+// costs one cycle.
+const SCAN_INTERVAL_MS = 400;
+let scanning = false;
+let scanTimer: number | null = null;
+let scanAttempts = 0;
+let scanLastNote = '';
+let scanDecoding = false;
+/** Grid dims locked after the first decoded slide — every slide in a deck shares one grid */
+let scanHints: { cols: number; rows: number } | undefined;
+
+function toggleScanning() {
+  if (scanning) {
+    stopScanning();
+    return;
+  }
+  if (!camera?.isActive) return;
+
+  // Fresh session: pages from a previous deck must never satisfy the
+  // auto-stop, and a stale lattice lock would sabotage detection.
+  decodedPages = [];
+  scanHints = undefined;
+  scanAttempts = 0;
+  scanLastNote = '';
+  $('decodedOutput').classList.remove('visible');
+  $('downloadDecoded').style.display = 'none';
+
+  scanning = true;
+  $('scanBtn').textContent = 'Stop Scanning';
+  updateScanStatus();
+  scheduleScanTick(0);
+}
+
+function stopScanning() {
+  scanning = false;
+  scanDecoding = false;
+  if (scanTimer !== null) {
+    window.clearTimeout(scanTimer);
+    scanTimer = null;
+  }
+  $('scanBtn').textContent = 'Scan Deck';
+}
+
+// A decode can take longer than the interval (seconds, for the first
+// un-hinted frame), so ticks are chained rather than fired on a fixed
+// timer, with a paint hop before each one so the HUD and the Stop
+// button stay responsive.
+function scheduleScanTick(delay: number) {
+  scanTimer = window.setTimeout(() => {
+    scanTimer = null;
+    if (!scanning) return;
+    scanDecoding = true;
+    updateScanStatus();
+    requestAnimationFrame(() => {
+      scanTimer = window.setTimeout(() => {
+        scanTimer = null;
+        if (!scanning) return;
+        scanTick();
+        scanDecoding = false;
+        if (scanning) scheduleScanTick(SCAN_INTERVAL_MS);
+      }, 0);
+    });
+  }, delay);
+}
+
+function scanTick() {
+  if (!camera?.isActive) {
+    stopScanning();
+    return;
+  }
+  if (!camera.resolution) {
+    // Stream attached but no frames delivered yet — keep waiting.
+    updateScanStatus();
+    return;
+  }
+  scanAttempts++;
+  try {
+    const { canvas, ctx } = camera.captureFrame();
+    const result = decodeCanvas(canvas, ctx, false, scanHints);
+    const page = result.pageInfo;
+    if (page?.valid && page.checksumValid) {
+      scanLastNote = `decoded page ${page.page + 1} ✓`;
+      scanHints = { cols: result.cols, rows: result.rows };
+      displayDecodedData(result);
+    } else if (page?.valid) {
+      scanLastNote = `page ${page.page + 1} read but its checksum failed — hold steadier`;
+    } else {
+      scanLastNote = result.error
+        ? result.error
+        : `no valid decode (grid ${result.cols}×${result.rows}, confidence ${Math.round(result.confidence * 100)}%)`;
+    }
+    const total = decodedPages[0]?.totalPages;
+    if (total && decodedPages.length >= total) {
+      stopScanning();
+      // The download button sits under the decode details — bring it up.
+      $('downloadDecoded').scrollIntoView({ behavior: 'smooth', block: 'center' });
+    }
+  } catch (err) {
+    scanLastNote = `frame error: ${(err as Error).message}`;
+  } finally {
+    updateScanStatus();
+  }
+}
+
+function updateScanStatus() {
+  const status = $('scanStatus');
+  status.style.display = 'block';
+
+  const res = camera?.resolution;
+  const camLine = res ? `Camera ${res.width}×${res.height}` : 'Camera starting…';
+  const working = scanDecoding ? ` — decoding frame ${scanAttempts + 1}…` : '';
+
+  if (decodedPages.length === 0) {
+    status.textContent = scanAttempts === 0
+      ? `${camLine} — point the camera so the glyph fills the frame${working}`
+      : `${camLine} — ${scanAttempts} frames tried — last: ${scanLastNote}${working}`;
+    return;
+  }
+  const total = decodedPages[0].totalPages;
+  const have = new Set(decodedPages.map(p => p.page));
+  const missing: number[] = [];
+  for (let i = 0; i < total; i++) {
+    if (!have.has(i)) missing.push(i + 1);
+  }
+  const missingText = missing.length > 8
+    ? `${missing.slice(0, 8).join(', ')} and ${missing.length - 8} more`
+    : missing.join(', ');
+  status.textContent = missing.length === 0
+    ? `Complete — all ${total} page${total !== 1 ? 's' : ''} collected. Tap "Download Decoded File" to save it.`
+    : `${camLine} — ${have.size} / ${total} pages — waiting for page${missing.length !== 1 ? 's' : ''} ${missingText} — last: ${scanLastNote}${working}`;
 }
 
 async function displayDecodedData(decoded: DecodedResult) {
@@ -692,7 +987,7 @@ async function displayDecodedData(decoded: DecodedResult) {
 
   // Show download button if valid
   const dlBtn = $('downloadDecoded');
-  dlBtn.style.display = pageInfo?.valid ? 'block' : 'none';
+  dlBtn.style.display = pageInfo?.valid && pageInfo.checksumValid ? 'block' : 'none';
 
   // Debug
   $('debugPre').textContent = JSON.stringify(

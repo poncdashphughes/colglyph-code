@@ -61,6 +61,15 @@ describe('pagePayloadCapacity', () => {
     expect(ultra).toBeGreaterThan(standard * 2.8);
   });
 
+  it('never exceeds the u16 payload-length header field', () => {
+    for (const media of ALL_MEDIA_SIZES) {
+      for (const scale of [1, 2 / 3, 8 / 15]) {
+        const layout = createLayout(media, scale);
+        expect(pagePayloadCapacity(layout), `${media.id} @ ${scale}`).toBeLessThanOrEqual(0xffff);
+      }
+    }
+  });
+
   it('clamps density to safe floors', () => {
     const a4 = getMediaSize('a4')!;
     const absurd = createLayout(a4, 0.01); // would be 0.015mm cells
@@ -145,6 +154,42 @@ describe('encodeFile / decodeTransmit', () => {
     const assembled = reassembleFile(decoded);
     expect(assembled.complete).toBe(true);
     expect(assembled.bytes).toEqual(data);
+  });
+
+  it('round-trips on a grid whose physical capacity exceeds the u16 payload cap', () => {
+    const media = getMediaSize('desktop-4k')!;
+    const layout = createLayout(media, 8 / 15); // Ultra — grid holds >64KB
+    const cap = pagePayloadCapacity(layout);
+    expect(cap).toBe(0xffff);
+
+    const rand = lcg(23);
+    const data = new Uint8Array(150_000); // forces 3 clamped pages
+    for (let i = 0; i < data.length; i++) data[i] = Math.floor(rand() * 256);
+
+    const pages = encodeFile(data, 'probe.bin', layout);
+    expect(pages).toHaveLength(3);
+
+    const decoded = pages.map(p => decodeTransmit(p.bytes));
+    for (const d of decoded) {
+      expect(d.valid).toBe(true);
+      expect(d.checksumValid).toBe(true);
+    }
+    const assembled = reassembleFile(decoded);
+    expect(assembled.complete).toBe(true);
+    expect(assembled.bytes).toEqual(data);
+  });
+
+  it('pads short pages with a non-zero pattern so they do not render as black fields', () => {
+    const layout = createLayout(getMediaSize('a4')!);
+    const pages = encodeFile(new Uint8Array([1, 2, 3]), 'tiny.bin', layout);
+    expect(pages).toHaveLength(1);
+    const zeros = pages[0].bytes.filter(b => b === 0).length;
+    expect(zeros).toBeLessThan(pages[0].bytes.length * 0.2);
+
+    const decoded = decodeTransmit(pages[0].bytes);
+    expect(decoded.valid).toBe(true);
+    expect(decoded.checksumValid).toBe(true);
+    expect(decoded.payload).toEqual([1, 2, 3]);
   });
 
   it('throws a descriptive error when a file needs more than 255 pages', () => {
